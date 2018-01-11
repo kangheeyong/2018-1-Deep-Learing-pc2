@@ -146,13 +146,15 @@ my_lib.mnist_4by4_save(np.reshape(test_ref,(-1,784)),file_name + '/input_ref.png
 
 hist_G=[]
 hist_D=[]
+
+G_error = []
+D_error = []
+gan_error = []
+content_errpr=[]
+
+
 log_txt = open(file_name +'/log.txt','w')
 for i in range(1000000) :
-    G_error = []
-    D_error = []
-    gan_error = []
-    content_errpr=[]
-
     train_images,_ = mnist.train.next_batch(100)
     train_origin = train_images * np.random.uniform(0.2,1.0)
     train_ref,_ = mnist.train.next_batch(100)
@@ -189,6 +191,12 @@ for i in range(1000000) :
             ref : np.reshape(test_ref,(-1,28,28,1)), t : np.reshape(test_origin,(-1,28,28,1)),
             isTrain : False})
         my_lib.mnist_4by4_save(np.reshape(r,(-1,784)),file_name + '/result_{}.png'.format(str(i).zfill(3)))
+        
+        G_error = []
+        D_error = []
+        gan_error = []
+        content_errpr=[]
+
 
 
 my_lib.gan_loss_graph_save(G_loss = hist_G,D_loss=hist_D,path = file_name + '/loss_graph.png')

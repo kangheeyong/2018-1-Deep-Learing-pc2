@@ -4,7 +4,7 @@ import os
 import sys
 import my_lib 
 import time 
-os.environ["CUDA_VISIBLE_DEVICES"]="3"
+os.environ["CUDA_VISIBLE_DEVICES"]="0"
 
  
 start = time.time()
@@ -106,13 +106,9 @@ D_fake = simple_D(G_y,isTrain,reuse=True)
 D_loss =  tf.reduce_mean(-0.5*(tf.log(D_real + 1e-8) + tf.log(1-D_fake + 1e-8)),name='D_loss')
 gan_loss =  tf.reduce_mean(-0.5*(tf.log(D_fake + 1e-8)),name='gan_loss')
  
-  
-cross_entropy = tf.reduce_mean(0.5*(-t*tf.log(G_y + 1e-8) - (1-t)*tf.log(1-G_y + 1e-8)),name='cross_entropy')
-mse = tf.reduce_mean(tf.square(t-G_y)/2,name='mse') 
-
 content_loss = tf.reduce_mean(tf.abs(t-G_y),name='content_loss')
 
-G_loss = tf.add(0.9*content_loss,0.1*gan_loss,name='G_loss')
+G_loss = tf.add(content_loss,0.001*gan_loss,name='G_loss')
 
 T_vars = tf.trainable_variables()
 D_vars = [var for var in T_vars if var.name.startswith('D')]
@@ -124,21 +120,21 @@ G_vars = [var for var in T_vars if var.name.startswith('G')]
 with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)) :    
     D_optim = tf.train.AdamOptimizer(0.0001).minimize(D_loss, var_list=D_vars, name='D_optim') 
     G_optim = tf.train.AdamOptimizer(0.0001).minimize(G_loss, var_list=G_vars, name='G_optim')
-
-
-
-
+    content_optim = tf.train.AdamOptimizer(0.0001).minimize(G_loss, var_list=G_vars, name='content_optim')
 
 
 sess = tf.Session(config=tf.ConfigProto(gpu_options=tf.GPUOptions(allow_growth=True)))
 sess.run(tf.global_variables_initializer())
 
-np.random.seed(int(time.time()))
+np.random.seed(1)
 
-test_images,_ = mnist.test.next_batch(16)    
+test_images = mnist.test.images[0:16]    
 test_origin = test_images*0.5
 test_ref,_ = mnist.test.next_batch(16)
 test_input = np.minimum(test_origin + test_ref*0.7 + np.random.uniform(size = (16,784)), 1.0)
+
+np.random.seed(int(time.time()))
+
 
 my_lib.mnist_4by4_save(np.reshape(test_input,(-1,784)),file_name + '/input_noise.png')
 my_lib.mnist_4by4_save(np.reshape(test_origin,(-1,784)),file_name + '/ground_true.png') 
@@ -154,6 +150,25 @@ content_errpr=[]
 
 
 
+
+for i in range(30000) :
+    
+    train_images,_ = mnist.train.next_batch(100)
+    train_origin = train_images * np.random.uniform(0.2,1.0)
+    train_ref,_ = mnist.train.next_batch(100)
+    train_input = np.minimum(train_origin + train_ref*np.random.uniform(0.2,1.0) + np.random.uniform(size = (100,784)), 1.0)
+    
+    _ , content_e= sess.run([content_optim,content_loss],
+        feed_dict={u : np.reshape(train_input,(-1,28,28,1)), ref : np.reshape(train_ref,(-1,28,28,1)),
+        t : np.reshape(train_origin,(-1,28,28,1)),isTrain : True})
+
+    if i%1000 == 0:
+     
+        print('c_e : %.4f'%(content_e))
+         
+        
+ 
+
 log_txt = open(file_name +'/log.txt','w')
 for i in range(200000) :
     train_images,_ = mnist.train.next_batch(100)
@@ -166,10 +181,10 @@ for i in range(200000) :
         isTrain : True})
     D_error.append(D_e) 
 
-    train_images,_ = mnist.train.next_batch(100)
-    train_origin = train_images * np.random.uniform(0.2,1.0)
-    train_ref,_ = mnist.train.next_batch(100)
-    train_input = np.minimum(train_origin + train_ref*np.random.uniform(0.2,1.0) + np.random.uniform(size = (100,784)), 1.0)
+    #train_images,_ = mnist.train.next_batch(100)
+    #train_origin = train_images * np.random.uniform(0.2,1.0)
+    #train_ref,_ = mnist.train.next_batch(100)
+    #train_input = np.minimum(train_origin + train_ref*np.random.uniform(0.2,1.0) + np.random.uniform(size = (100,784)), 1.0)
     
     _ , G_e, gan_e, content_e= sess.run([G_optim, G_loss, gan_loss, content_loss],
         feed_dict={u : np.reshape(train_input,(-1,28,28,1)), ref : np.reshape(train_ref,(-1,28,28,1)),
@@ -182,17 +197,17 @@ for i in range(200000) :
     if i%1000 == 0:
         hist_D.append(np.mean(D_error))
         hist_G.append(np.mean(G_error))
-        
-        print('D_e : %.4f, G_e : %.4f, gan_e : %.4f, content_e : %.4f'%(np.mean(D_error),
-            np.mean(G_error), np.mean(gan_error), np.mean(content_errpr)))
-        log_txt.write('D_e : %.4f, G_e : %.4f, gan_e : %.4f, content_e : %.4f\n'%(np.mean(D_error),
-            np.mean(G_error), np.mean(gan_error), np.mean(content_errpr)))
- 
-        r = sess.run([G_y],feed_dict={u : np.reshape(test_input,(-1,28,28,1)),
+  
+        r,val_e = sess.run([G_y,content_loss],feed_dict={u : np.reshape(test_input,(-1,28,28,1)),
             ref : np.reshape(test_ref,(-1,28,28,1)), t : np.reshape(test_origin,(-1,28,28,1)),
             isTrain : False})
-        my_lib.mnist_4by4_save(np.reshape(r,(-1,784)),file_name + '/result_{}.png'.format(str(i).zfill(3)))
         
+        print('D_e : %.4f, G_e : %.4f, g_e : %.4f, c_e : %.4f, v_e : %.4f'%(np.mean(D_error),
+            np.mean(G_error), np.mean(gan_error), np.mean(content_errpr),val_e))
+        log_txt.write('D_e : %.4f, G_e : %.4f, g_e : %.4f, c_e : %.4f, v_e : %.4f\n'%(np.mean(D_error),
+            np.mean(G_error), np.mean(gan_error), np.mean(content_errpr),val_e))
+        my_lib.mnist_4by4_save(np.reshape(r,(-1,784)),file_name + '/result_{}.png'.format(str(i).zfill(3)))
+
         G_error = []
         D_error = []
         gan_error = []
